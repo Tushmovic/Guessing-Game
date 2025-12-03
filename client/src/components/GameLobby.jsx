@@ -209,25 +209,32 @@ const GameLobby = ({ onJoin, playerName, setPlayerName }) => {
 
         <div className="join-game-section">
           <h2>Join Existing Game</h2>
-          <div className="join-form">
+          <p className="section-description">Enter the game code below to join a game</p>
+          
+          <div className="game-code-input">
+            <label htmlFor="gameCode" className="input-label">Game Code:</label>
             <input
+              id="gameCode"
               type="text"
-              className="input"
-              placeholder="Enter game code"
+              className="input game-code"
+              placeholder="Enter 6-character game code"
               value={sessionId}
               onChange={(e) => setSessionId(e.target.value.toUpperCase())}
               maxLength={6}
               disabled={!playerName.trim()}
             />
-            <button
-              className="btn btn-success"
-              onClick={handleJoinGame}
-              disabled={!playerName.trim() || !sessionId.trim()}
-            >
-              Join Game
-            </button>
+            <div className="input-hint">
+              Enter the 6-character code provided by the Game Master
+            </div>
           </div>
-          <p className="hint">Enter the 6-character game code</p>
+          
+          <button
+            className="btn btn-success join-button"
+            onClick={handleJoinGame}
+            disabled={!playerName.trim() || !sessionId.trim()}
+          >
+            Join Game
+          </button>
         </div>
 
         <div className="instructions">
@@ -300,43 +307,125 @@ const GameLobby = ({ onJoin, playerName, setPlayerName }) => {
         
         .create-game-section, .join-game-section {
           margin: 30px 0;
-          padding: 20px;
+          padding: 25px;
           background: #f7fafc;
-          border-radius: 10px;
+          border-radius: 12px;
         }
         
         h2 {
           color: #2d3748;
-          margin-bottom: 10px;
+          margin-bottom: 8px;
           font-size: 1.5rem;
+        }
+        
+        .section-description {
+          color: #718096;
+          margin-bottom: 20px;
+          font-size: 0.95rem;
+        }
+        
+        .game-code-input {
+          margin-bottom: 25px;
+        }
+        
+        .input-label {
+          display: block;
+          margin-bottom: 8px;
+          font-weight: 600;
+          color: #4a5568;
+          font-size: 0.95rem;
+        }
+        
+        .game-code {
+          font-size: 1.2rem;
+          font-weight: 600;
+          letter-spacing: 2px;
+          text-align: center;
+          text-transform: uppercase;
+          padding: 14px;
+          border: 2px solid #e2e8f0;
+          transition: all 0.3s ease;
+        }
+        
+        .game-code:focus {
+          border-color: #4c51bf;
+          box-shadow: 0 0 0 3px rgba(76, 81, 191, 0.1);
+          outline: none;
+        }
+        
+        .game-code::placeholder {
+          letter-spacing: normal;
+          font-size: 1rem;
+          color: #a0aec0;
+        }
+        
+        .input-hint {
+          color: #718096;
+          font-size: 0.85rem;
+          margin-top: 8px;
+          text-align: center;
         }
         
         .btn {
           width: 100%;
-          margin-top: 10px;
+          padding: 14px;
+          font-size: 1.1rem;
+          font-weight: 600;
+          border-radius: 8px;
+          cursor: pointer;
+          transition: all 0.3s ease;
           display: flex;
           justify-content: center;
           align-items: center;
           gap: 10px;
+          border: none;
+        }
+        
+        .btn-primary {
+          background: #4c51bf;
+          color: white;
+        }
+        
+        .btn-primary:hover:not(:disabled) {
+          background: #434190;
+          transform: translateY(-2px);
+          box-shadow: 0 4px 12px rgba(76, 81, 191, 0.3);
+        }
+        
+        .btn-success {
+          background: #48bb78;
+          color: white;
+        }
+        
+        .btn-success:hover:not(:disabled) {
+          background: #38a169;
+          transform: translateY(-2px);
+          box-shadow: 0 4px 12px rgba(72, 187, 120, 0.3);
+        }
+        
+        .btn:disabled {
+          opacity: 0.5;
+          cursor: not-allowed;
+          transform: none !important;
+          box-shadow: none !important;
+        }
+        
+        .join-button {
+          margin-top: 5px;
         }
         
         .spinner-small {
           border: 2px solid #f3f3f3;
           border-top: 2px solid white;
           border-radius: 50%;
-          width: 16px;
-          height: 16px;
+          width: 20px;
+          height: 20px;
           animation: spin 1s linear infinite;
         }
         
-        .join-form {
-          display: flex;
-          gap: 10px;
-          margin: 15px 0;
-        }
-        
-        .join-form .input {
-          flex: 1;
+        @keyframes spin {
+          0% { transform: rotate(0deg); }
+          100% { transform: rotate(360deg); }
         }
         
         .divider {
@@ -355,24 +444,22 @@ const GameLobby = ({ onJoin, playerName, setPlayerName }) => {
         
         .divider span {
           padding: 0 20px;
-        }
-        
-        .hint {
-          color: #718096;
+          background: white;
           font-size: 0.9rem;
-          margin-top: 5px;
+          font-weight: 600;
         }
         
         .instructions {
           margin-top: 30px;
-          padding: 20px;
+          padding: 25px;
           background: #edf2f7;
-          border-radius: 10px;
+          border-radius: 12px;
         }
         
         .instructions h3 {
           color: #2d3748;
-          margin-bottom: 10px;
+          margin-bottom: 15px;
+          font-size: 1.3rem;
         }
         
         .instructions ol {
@@ -381,26 +468,104 @@ const GameLobby = ({ onJoin, playerName, setPlayerName }) => {
         }
         
         .instructions li {
+          margin-bottom: 10px;
+          line-height: 1.5;
+        }
+        
+        .error-message {
+          background: #fff5f5;
+          color: #c53030;
+          padding: 12px;
+          border-radius: 8px;
+          margin: 15px 0;
+          border-left: 4px solid #f56565;
+          font-size: 0.95rem;
+        }
+        
+        .form-group {
+          margin-bottom: 20px;
+        }
+        
+        .form-group label {
+          display: block;
           margin-bottom: 8px;
+          font-weight: 600;
+          color: #4a5568;
+        }
+        
+        .input {
+          width: 100%;
+          padding: 12px;
+          border: 2px solid #e2e8f0;
+          border-radius: 8px;
+          font-size: 1rem;
+          transition: all 0.3s ease;
+          font-family: inherit;
+        }
+        
+        .input:focus {
+          outline: none;
+          border-color: #4c51bf;
+          box-shadow: 0 0 0 3px rgba(76, 81, 191, 0.1);
+        }
+        
+        @media (max-width: 768px) {
+          .lobby-card {
+            padding: 30px 25px;
+          }
+          
+          h1 {
+            font-size: 2rem;
+            margin-bottom: 25px;
+          }
+          
+          .create-game-section, .join-game-section {
+            padding: 20px;
+            margin: 25px 0;
+          }
+          
+          .instructions {
+            padding: 20px;
+          }
         }
         
         @media (max-width: 480px) {
           .lobby-card {
-            padding: 20px;
+            padding: 25px 20px;
           }
           
-          .join-form {
-            flex-direction: column;
+          h1 {
+            font-size: 1.8rem;
+          }
+          
+          h2 {
+            font-size: 1.3rem;
           }
           
           .connection-status {
             flex-direction: column;
             align-items: flex-start;
-            gap: 5px;
+            gap: 8px;
           }
           
           .player-id {
             margin-left: 0;
+            align-self: flex-start;
+          }
+          
+          .btn {
+            padding: 12px;
+            font-size: 1rem;
+          }
+          
+          .game-code {
+            font-size: 1.1rem;
+            padding: 12px;
+          }
+          
+          .divider span {
+            padding: 0 15px;
+            font-size: 0.85rem;
           }
         }
       `}</style>

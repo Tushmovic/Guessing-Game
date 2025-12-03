@@ -13,16 +13,20 @@ const GameRoom = ({ game, onLeave, playerName }) => {
   useEffect(() => {
     if (!socket) return;
 
+    console.log('🔄 GameRoom: Socket connected, requesting game state...');
+    
     // Request current game state
     socket.emit('getGameState', { sessionId: game.id });
 
     // Event handlers
     const handleGameState = (data) => {
+      console.log('📊 Game state received:', data);
       setGameState(data);
       setIsGameMaster(data.gameMaster === playerId);
     };
 
     const handlePlayerJoined = (data) => {
+      console.log('👤 Player joined:', data);
       setGameState(prev => ({
         ...prev,
         players: data.players,
@@ -30,11 +34,12 @@ const GameRoom = ({ game, onLeave, playerName }) => {
       }));
       addMessage({
         type: 'system',
-        text: `A new player joined! Total players: ${data.playerCount}`
+        text: `👤 A new player joined! Total players: ${data.playerCount}`
       });
     };
 
     const handleGameStarted = (data) => {
+      console.log('🎬 Game started:', data);
       setGameState(prev => ({
         ...prev,
         status: 'in-progress',
@@ -43,11 +48,12 @@ const GameRoom = ({ game, onLeave, playerName }) => {
       }));
       addMessage({
         type: 'system',
-        text: `Game started! You have ${data.attempts} attempts.`
+        text: `🎬 Game started! You have ${data.attempts} attempts. Question: "${data.question}"`
       });
     };
 
     const handleGuessAttempt = (data) => {
+      console.log('🤔 Guess attempt:', data);
       const message = data.isCorrect 
         ? `🎯 ${data.playerName} guessed correctly!`
         : `🤔 ${data.playerName} guessed: "${data.guess}" (${data.attemptsLeft} attempts left)`;
@@ -59,17 +65,20 @@ const GameRoom = ({ game, onLeave, playerName }) => {
     };
 
     const handleGameEnded = (data) => {
+      console.log('🏁 Game ended:', data);
       setGameState(prev => ({
         ...prev,
         status: 'ended',
         winner: data.winner,
+        winnerName: data.winnerName,
+        answer: data.answer,
         scores: data.scores
       }));
 
       if (data.winner) {
         addMessage({
           type: 'winner',
-          text: `🎉 ${data.winnerName} won! Answer: ${data.answer}`
+          text: `🏆 ${data.winnerName} won! Answer: ${data.answer} (+10 points!)`
         });
       } else if (data.timeout) {
         addMessage({
@@ -86,10 +95,59 @@ const GameRoom = ({ game, onLeave, playerName }) => {
       }));
     };
 
+    const handleNextRound = (data) => {
+      console.log('🔄 Next round data:', data);
+      
+      setGameState(prev => ({
+        ...prev,
+        status: 'waiting',
+        question: null,
+        answer: null,
+        winner: null,
+        winnerName: null,
+        timer: 60,
+        gameMaster: data.gameMaster,
+        gameMasterName: data.gameMasterName,
+        players: data.players,
+        scores: data.scores
+      }));
+      
+      setIsGameMaster(data.gameMaster === playerId);
+      
+      addMessage({
+        type: 'system',
+        text: `🔄 New round! ${data.gameMasterName} is now the Game Master.`
+      });
+      
+      // If you're the new game master, add a special message
+      if (data.gameMaster === playerId) {
+        addMessage({
+          type: 'system',
+          text: `👑 You are now the Game Master! Create a new question.`
+        });
+      }
+    };
+
+    const handlePlayerLeft = (data) => {
+      console.log('👋 Player left:', data);
+      setGameState(prev => ({
+        ...prev,
+        players: data.players,
+        gameMaster: data.gameMaster,
+        scores: data.scores
+      }));
+      
+      addMessage({
+        type: 'system',
+        text: `👋 ${data.playerName} left the game.`
+      });
+    };
+
     const handleError = (error) => {
+      console.error('❌ Socket error:', error);
       addMessage({
         type: 'error',
-        text: `Error: ${error.message}`
+        text: `❌ Error: ${error.message}`
       });
     };
 
@@ -100,21 +158,26 @@ const GameRoom = ({ game, onLeave, playerName }) => {
     socket.on('guessAttempt', handleGuessAttempt);
     socket.on('gameEnded', handleGameEnded);
     socket.on('timerUpdate', handleTimerUpdate);
+    socket.on('nextRound', handleNextRound);
+    socket.on('playerLeft', handlePlayerLeft);
     socket.on('error', handleError);
 
     // Initial message
     addMessage({
       type: 'system',
-      text: `Joined game ${game.id}. Waiting for players...`
+      text: `🎮 Joined game ${game.id}. Waiting for players...`
     });
 
     return () => {
+      console.log('🧹 Cleaning up GameRoom listeners');
       socket.off('gameState', handleGameState);
       socket.off('playerJoined', handlePlayerJoined);
       socket.off('gameStarted', handleGameStarted);
       socket.off('guessAttempt', handleGuessAttempt);
       socket.off('gameEnded', handleGameEnded);
       socket.off('timerUpdate', handleTimerUpdate);
+      socket.off('nextRound', handleNextRound);
+      socket.off('playerLeft', handlePlayerLeft);
       socket.off('error', handleError);
     };
   }, [socket, game.id, playerId]);
@@ -128,6 +191,7 @@ const GameRoom = ({ game, onLeave, playerName }) => {
   };
 
   const handleLeave = () => {
+    console.log('👋 Leaving game:', game.id);
     socket.emit('leaveGame', { sessionId: game.id });
     onLeave();
   };
@@ -140,17 +204,23 @@ const GameRoom = ({ game, onLeave, playerName }) => {
     <div className="game-room">
       <div className="game-header">
         <div className="game-info">
-          <h2>Game: {gameState.id}</h2>
+          <h2>🎮 Game: {gameState.id}</h2>
           <div className="status-badge">
-            Status: {gameState.status}
+            Status: <span className={`status-${gameState.status}`}>{gameState.status}</span>
             {gameState.status === 'in-progress' && (
               <span className="timer">⏱ {gameState.timer}s</span>
             )}
+            {gameState.status === 'ended' && (
+              <span className="timer-ended">⏱ Time's up</span>
+            )}
           </div>
-          {isGameMaster && <span className="master-badge">👑 Game Master</span>}
+          {isGameMaster && <span className="master-badge">👑 You are Game Master</span>}
+          {gameState.gameMasterName && !isGameMaster && (
+            <span className="current-master">Game Master: {gameState.gameMasterName}</span>
+          )}
         </div>
         <button className="btn btn-danger" onClick={handleLeave}>
-          Leave Game
+          👋 Leave Game
         </button>
       </div>
 
@@ -186,6 +256,7 @@ const GameRoom = ({ game, onLeave, playerName }) => {
           border-radius: 15px;
           overflow: hidden;
           box-shadow: 0 20px 60px rgba(0,0,0,0.1);
+          min-height: 700px;
         }
         
         .game-header {
@@ -195,6 +266,8 @@ const GameRoom = ({ game, onLeave, playerName }) => {
           padding: 20px;
           background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
           color: white;
+          flex-wrap: wrap;
+          gap: 15px;
         }
         
         .game-info {
@@ -211,26 +284,57 @@ const GameRoom = ({ game, onLeave, playerName }) => {
         
         .status-badge {
           background: rgba(255,255,255,0.2);
-          padding: 5px 15px;
+          padding: 8px 16px;
           border-radius: 20px;
           display: flex;
           align-items: center;
           gap: 10px;
+          font-weight: 600;
+        }
+        
+        .status-waiting {
+          color: #f6e05e;
+        }
+        
+        .status-in-progress {
+          color: #68d391;
+        }
+        
+        .status-ended {
+          color: #fc8181;
         }
         
         .timer {
           background: rgba(255,255,255,0.3);
-          padding: 2px 10px;
+          padding: 4px 12px;
           border-radius: 10px;
           font-weight: bold;
+          color: white;
+        }
+        
+        .timer-ended {
+          background: rgba(252, 129, 129, 0.3);
+          padding: 4px 12px;
+          border-radius: 10px;
+          font-weight: bold;
+          color: #fed7d7;
         }
         
         .master-badge {
           background: #f6e05e;
           color: #744210;
-          padding: 5px 15px;
+          padding: 6px 16px;
           border-radius: 20px;
           font-weight: bold;
+          font-size: 0.9rem;
+        }
+        
+        .current-master {
+          background: rgba(102, 126, 234, 0.3);
+          color: white;
+          padding: 6px 16px;
+          border-radius: 20px;
+          font-size: 0.9rem;
         }
         
         @media (min-width: 768px) {
@@ -244,7 +348,6 @@ const GameRoom = ({ game, onLeave, playerName }) => {
         @media (max-width: 767px) {
           .game-header {
             flex-direction: column;
-            gap: 15px;
             align-items: flex-start;
           }
           
@@ -252,6 +355,27 @@ const GameRoom = ({ game, onLeave, playerName }) => {
             flex-direction: column;
             align-items: flex-start;
             gap: 10px;
+          }
+          
+          .status-badge {
+            flex-direction: column;
+            align-items: flex-start;
+            gap: 5px;
+          }
+          
+          h2 {
+            font-size: 1.5rem;
+          }
+        }
+        
+        @media (max-width: 480px) {
+          .game-header {
+            padding: 15px;
+          }
+          
+          .master-badge, .current-master {
+            font-size: 0.8rem;
+            padding: 4px 12px;
           }
         }
       `}</style>

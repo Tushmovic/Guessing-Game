@@ -7,17 +7,22 @@ const cors = require('cors');
 const app = express();
 const server = http.createServer(app);
 
-// Fix CORS - Allow both Vite (5173) and CRA (3000)
+// Dynamic CORS for production
+const frontendUrl = process.env.FRONTEND_URL || 'http://localhost:5173';
+const backendUrl = process.env.NODE_ENV === 'production' 
+  ? process.env.RENDER_EXTERNAL_URL || process.env.RAILWAY_STATIC_URL || 'http://localhost:3001'
+  : 'http://localhost:3001';
+
 const io = socketIo(server, {
   cors: {
-    origin: ["http://localhost:3000", "http://localhost:5173", "http://127.0.0.1:5173"],
+    origin: [frontendUrl, "http://localhost:5173", "http://localhost:3000", "http://127.0.0.1:5173"],
     methods: ["GET", "POST"],
     credentials: true
   }
 });
 
 app.use(cors({
-  origin: ["http://localhost:3000", "http://localhost:5173", "http://127.0.0.1:5173"],
+  origin: [frontendUrl, "http://localhost:5173", "http://localhost:3000", "http://127.0.0.1:5173"],
   credentials: true
 }));
 app.use(express.json());
@@ -82,7 +87,8 @@ io.on('connection', (socket) => {
     gameSession.players.set(socket.id, { 
       ...player, 
       isGameMaster: true,
-      attempts: 3
+      attempts: 3,
+      hasGuessed: false
     });
     
     // Update player's current game
@@ -143,7 +149,8 @@ io.on('connection', (socket) => {
     gameSession.players.set(socket.id, { 
       ...player, 
       isGameMaster: false,
-      attempts: 3 
+      attempts: 3,
+      hasGuessed: false
     });
     
     // Update player's current game
@@ -206,10 +213,11 @@ io.on('connection', (socket) => {
     gameSession.timer = 60;
     gameSession.startTime = Date.now();
     
-    // Reset player attempts
+    // Reset player attempts and flags
     gameSession.players.forEach(player => {
       player.attempts = 3;
       player.hasGuessed = false;
+      player.isWinner = false;
     });
     
     // Broadcast game started
@@ -299,14 +307,17 @@ io.on('connection', (socket) => {
     const gameSession = gameSessions.get(sessionId);
     
     if (gameSession) {
+      const gameMasterPlayer = gameSession.players.get(gameSession.gameMaster);
       socket.emit('gameState', {
         id: gameSession.id,
         gameMaster: gameSession.gameMaster,
+        gameMasterName: gameMasterPlayer?.username,
         players: Array.from(gameSession.players.values()),
         status: gameSession.status,
         question: gameSession.question,
         timer: gameSession.timer,
         winner: gameSession.winner,
+        winnerName: gameSession.winner ? gameSession.players.get(gameSession.winner)?.username : null,
         answer: gameSession.answer
       });
     } else {
@@ -410,37 +421,72 @@ function endGame(sessionId, hasWinner) {
   }
 }
 
-// Rotate game master
+// Rotate game master - FIXED VERSION
 function rotateGameMaster(sessionId) {
   const gameSession = gameSessions.get(sessionId);
-  if (!gameSession) return;
+  if (!gameSession || gameSession.players.size === 0) return;
   
+  console.log(`🔄 Rotating game master in session ${sessionId}`);
+  
+  // Get all player IDs
   const playerIds = Array.from(gameSession.players.keys());
   if (playerIds.length === 0) return;
   
+  // Find current game master index
   const currentIndex = playerIds.indexOf(gameSession.gameMaster);
-  const nextIndex = (currentIndex + 1) % playerIds.length;
   
-  gameSession.gameMaster = playerIds[nextIndex];
+  // Calculate next game master
+  let nextGameMasterId;
+  if (currentIndex === -1) {
+    // If current game master not found, pick first player
+    nextGameMasterId = playerIds[0];
+  } else {
+    // Move to next player, wrap around if at end
+    const nextIndex = (currentIndex + 1) % playerIds.length;
+    nextGameMasterId = playerIds[nextIndex];
+  }
   
-  // Update player flags
+  // Update game master
+  gameSession.gameMaster = nextGameMasterId;
+  
+  // Get new game master's info
+  const newGameMaster = gameSession.players.get(nextGameMasterId);
+  
+  console.log(`👑 New game master: ${nextGameMasterId} (${newGameMaster?.username})`);
+  
+  // Reset ALL player flags
   gameSession.players.forEach((player, id) => {
-    player.isGameMaster = (id === gameSession.gameMaster);
+    player.isGameMaster = (id === nextGameMasterId);
+    player.attempts = 3; // Reset attempts for new round
+    player.hasGuessed = false; // Reset guess flag
+    player.isWinner = false; // Reset winner flag
   });
   
-  // Reset game for next round
+  // Reset game state for new round
   gameSession.status = 'waiting';
   gameSession.question = null;
   gameSession.answer = null;
   gameSession.winner = null;
   gameSession.timer = 60;
   
-  console.log(`🔄 Game master rotated to ${gameSession.gameMaster} in game ${sessionId}`);
+  // Prepare scores array
+  const scores = Array.from(gameSession.players.values()).map(p => ({
+    id: p.id,
+    username: p.username,
+    score: players.get(p.id)?.score || 0
+  }));
   
+  // Broadcast next round with COMPLETE information
   broadcastToRoom(sessionId, 'nextRound', {
-    gameMaster: gameSession.gameMaster,
-    players: Array.from(gameSession.players.values())
+    gameMaster: nextGameMasterId,
+    gameMasterName: newGameMaster?.username,
+    players: Array.from(gameSession.players.values()),
+    scores: scores,
+    status: 'waiting',
+    timer: 60
   });
+  
+  console.log(`🔄 Round reset for game ${sessionId}. New game master: ${newGameMaster?.username}`);
 }
 
 // Handle player leaving
@@ -458,19 +504,7 @@ function handlePlayerLeave(playerId, sessionId) {
     playerObj.currentGame = null;
   }
   
-  // If game master leaves, assign new one
-  if (gameSession.gameMaster === playerId && gameSession.players.size > 0) {
-    const newGameMaster = Array.from(gameSession.players.keys())[0];
-    gameSession.gameMaster = newGameMaster;
-    
-    // Update player flag
-    const newMasterPlayer = gameSession.players.get(newGameMaster);
-    if (newMasterPlayer) {
-      newMasterPlayer.isGameMaster = true;
-    }
-  }
-  
-  console.log(`👋 Player ${playerId} left game ${sessionId}`);
+  console.log(`👋 Player ${playerId} (${player?.username}) left game ${sessionId}`);
   
   // If no players left, delete game
   if (gameSession.players.size === 0) {
@@ -479,16 +513,41 @@ function handlePlayerLeave(playerId, sessionId) {
     return;
   }
   
+  // If game master leaves, assign new one
+  if (gameSession.gameMaster === playerId) {
+    const playerIds = Array.from(gameSession.players.keys());
+    if (playerIds.length > 0) {
+      const newGameMaster = playerIds[0];
+      gameSession.gameMaster = newGameMaster;
+      
+      // Update player flag
+      const newMasterPlayer = gameSession.players.get(newGameMaster);
+      if (newMasterPlayer) {
+        newMasterPlayer.isGameMaster = true;
+      }
+      
+      console.log(`👑 Game master reassigned to ${newGameMaster} (${newMasterPlayer?.username})`);
+    }
+  }
+  
   // Broadcast player left
   broadcastToRoom(sessionId, 'playerLeft', {
     playerId,
+    playerName: player?.username,
     players: Array.from(gameSession.players.values()),
-    gameMaster: gameSession.gameMaster
+    gameMaster: gameSession.gameMaster,
+    scores: Array.from(gameSession.players.values()).map(p => ({
+      id: p.id,
+      username: p.username,
+      score: players.get(p.id)?.score || 0
+    }))
   });
 }
 
 const PORT = process.env.PORT || 3001;
 server.listen(PORT, () => {
   console.log(`🚀 Server running on port ${PORT}`);
-  console.log(`🌐 Allowed origins: http://localhost:3000, http://localhost:5173`);
+  console.log(`🌐 Backend URL: ${backendUrl}`);
+  console.log(`🌐 Frontend URL: ${frontendUrl}`);
+  console.log(`🌐 Environment: ${process.env.NODE_ENV || 'development'}`);
 });
