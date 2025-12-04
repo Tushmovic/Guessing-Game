@@ -8,7 +8,7 @@ const app = express();
 const server = http.createServer(app);
 
 // Dynamic CORS for production
-const frontendUrl = process.env.FRONTEND_URL || 'http://localhost:5173';
+const frontendUrl = process.env.CLIENT_URL || 'http://localhost:5173';
 const backendUrl = process.env.NODE_ENV === 'production' 
   ? process.env.RENDER_EXTERNAL_URL || process.env.RAILWAY_STATIC_URL || 'http://localhost:3001'
   : 'http://localhost:3001';
