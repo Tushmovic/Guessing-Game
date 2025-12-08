@@ -9,9 +9,6 @@ const server = http.createServer(app);
 
 // Dynamic CORS for production
 const frontendUrl = process.env.CLIENT_URL || 'http://localhost:5173';
-const backendUrl = process.env.NODE_ENV === 'production' 
-  ? process.env.RENDER_EXTERNAL_URL || process.env.RAILWAY_STATIC_URL || 'http://localhost:3001'
-  : 'http://localhost:3001';
 
 const io = socketIo(server, {
   cors: {
@@ -26,6 +23,24 @@ app.use(cors({
   credentials: true
 }));
 app.use(express.json());
+
+// CRITICAL: Health check endpoint for Render
+app.get('/health', (req, res) => {
+  res.status(200).json({ 
+    status: 'healthy',
+    timestamp: new Date().toISOString(),
+    environment: process.env.NODE_ENV || 'development'
+  });
+});
+
+// Additional status endpoint
+app.get('/api/status', (req, res) => {
+  res.json({
+    message: 'Guessing Game Backend is running',
+    version: '1.0.0',
+    environment: process.env.NODE_ENV || 'development'
+  });
+});
 
 // Store all active game sessions
 const gameSessions = new Map();
@@ -544,10 +559,16 @@ function handlePlayerLeave(playerId, sessionId) {
   });
 }
 
+// CRITICAL FIXES BELOW:
+
 const PORT = process.env.PORT || 3001;
-server.listen(PORT, () => {
+
+// FIX 1: Add '0.0.0.0' for Render deployment
+// FIX 2: Use environment variables correctly in logs
+server.listen(PORT, '0.0.0.0', () => {
   console.log(`🚀 Server running on port ${PORT}`);
-  console.log(`🌐 Backend URL: ${backendUrl}`);
   console.log(`🌐 Frontend URL: ${frontendUrl}`);
   console.log(`🌐 Environment: ${process.env.NODE_ENV || 'development'}`);
+  console.log(`✅ Health check available at: /health`);
+  console.log(`✅ API status at: /api/status`);
 });
