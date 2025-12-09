@@ -129,35 +129,59 @@ io.on('connection', (socket) => {
     console.log(`✅ Game ${sessionId} created by ${socket.id} (${player.username})`);
   });
 
-  // Handle joining a game
+  // Handle joining a game - ENHANCED VERSION
   socket.on('joinGame', (data) => {
-    console.log('🎯 Join game request:', data);
+    console.log('🎯 JOIN GAME REQUEST - Full data:', JSON.stringify(data));
+    console.log('🎯 All active games:', Array.from(gameSessions.keys()));
     
     const { sessionId, username } = data;
     const gameSession = gameSessions.get(sessionId);
-    const player = players.get(socket.id);
     
     if (!gameSession) {
-      console.log('❌ Game not found:', sessionId);
-      socket.emit('error', { message: 'Game not found' });
+      console.log('❌ GAME NOT FOUND - Requested:', sessionId);
+      console.log('❌ Available games:', Array.from(gameSessions.keys()));
+      socket.emit('error', { 
+        message: `Game "${sessionId}" not found. Check the code or the game may have ended.` 
+      });
       return;
     }
     
+    console.log('🎯 Game found:', {
+      id: gameSession.id,
+      status: gameSession.status,
+      players: gameSession.players.size,
+      maxPlayers: gameSession.maxPlayers
+    });
+    
     if (gameSession.status !== 'waiting') {
-      console.log('❌ Game already in progress:', sessionId);
-      socket.emit('error', { message: 'Game already in progress' });
+      console.log('❌ Game not in waiting state:', gameSession.status);
+      socket.emit('error', { 
+        message: `Game is ${gameSession.status === 'in-progress' ? 'in progress' : 'ended'}.` 
+      });
       return;
     }
     
     if (gameSession.players.size >= gameSession.maxPlayers) {
-      console.log('❌ Game is full:', sessionId);
-      socket.emit('error', { message: 'Game is full' });
+      console.log('❌ Game full:', gameSession.players.size, '/', gameSession.maxPlayers);
+      socket.emit('error', { 
+        message: `Game is full (${gameSession.players.size}/${gameSession.maxPlayers} players)` 
+      });
       return;
     }
+    
+    // Rest of your existing join logic...
+    const player = players.get(socket.id);
     
     // Update player username if provided
     if (username) {
       player.username = username;
+    }
+    
+    // Check if player already in game
+    if (gameSession.players.has(socket.id)) {
+      console.log('⚠️ Player already in game:', socket.id);
+      socket.emit('error', { message: 'You are already in this game' });
+      return;
     }
     
     // Add player to game
@@ -174,13 +198,14 @@ io.on('connection', (socket) => {
     // Join socket room
     socket.join(sessionId);
     
+    console.log(`✅ PLAYER JOINED SUCCESS - Game: ${sessionId}, Player: ${socket.id} (${player.username})`);
+    console.log(`✅ Total players now: ${gameSession.players.size}`);
+    
     // Broadcast to all in room
     broadcastToRoom(sessionId, 'playerJoined', {
       players: Array.from(gameSession.players.values()),
       playerCount: gameSession.players.size
     });
-    
-    console.log(`✅ Player ${socket.id} (${player.username}) joined game ${sessionId}`);
     
     // Send confirmation to joining player
     socket.emit('joinSuccess', {
@@ -558,6 +583,17 @@ function handlePlayerLeave(playerId, sessionId) {
     }))
   });
 }
+
+// Auto-cleanup empty games after 5 minutes
+setInterval(() => {
+  const now = Date.now();
+  for (const [sessionId, gameSession] of gameSessions) {
+    if (gameSession.players.size === 0 && (now - gameSession.createdAt) > 300000) {
+      console.log(`🧹 Cleaning up empty game: ${sessionId}`);
+      gameSessions.delete(sessionId);
+    }
+  }
+}, 60000); // Check every minute
 
 // CRITICAL FIXES BELOW:
 
